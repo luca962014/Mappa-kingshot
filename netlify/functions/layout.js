@@ -1,44 +1,55 @@
-import { getStore } from '@netlify/blobs';
+import { getStore } from '@netlify/blobs'
 
-const store = getStore('kingshot-planner');
-const KEY = 'layout';
+const store = getStore('kingshot-planner')
+const KEY = 'layout'
 
-const defaultState = () => ({ slots: [], updatedAt: null });
+const defaultState = () => ({ slots: [], updatedAt: null })
 
-const json = (statusCode, body) => ({
-  statusCode,
-  headers: {
-    'content-type': 'application/json; charset=utf-8',
-    'access-control-allow-origin': '*',
-    'access-control-allow-methods': 'GET,POST,OPTIONS',
-    'access-control-allow-headers': 'Content-Type,x-editor-key'
-  },
-  body: JSON.stringify(body)
-});
+const jsonResponse = (body, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'access-control-allow-origin': '*',
+      'access-control-allow-methods': 'GET,POST,OPTIONS',
+      'access-control-allow-headers': 'Content-Type,x-editor-key'
+    }
+  })
 
 export default async (request) => {
-  if (request.method === 'OPTIONS') return json(200, { ok: true });
+  if (request.method === 'OPTIONS') {
+    return new Response(undefined, {
+      status: 204,
+      headers: {
+        'access-control-allow-origin': '*',
+        'access-control-allow-methods': 'GET,POST,OPTIONS',
+        'access-control-allow-headers': 'Content-Type,x-editor-key'
+      }
+    })
+  }
 
   if (request.method === 'GET') {
-    const data = await store.get(KEY, { type: 'json' });
-    return json(200, data || defaultState());
+    const data = await store.get(KEY, { type: 'json' })
+    return jsonResponse(data || defaultState())
   }
 
   if (request.method === 'POST') {
-    const requiredKey = process.env.EDITOR_KEY || '';
-    const providedKey = request.headers.get('x-editor-key') || '';
+    const requiredKey = process.env.EDITOR_KEY || ''
+    const providedKey = request.headers.get('x-editor-key') || ''
+
     if (requiredKey && providedKey !== requiredKey) {
-      return json(401, { error: 'Editor key non valida.' });
+      return jsonResponse({ error: 'Editor key non valida.' }, 401)
     }
 
-    const payload = await request.json();
+    const payload = await request.json()
     const state = {
       slots: Array.isArray(payload?.slots) ? payload.slots : [],
       updatedAt: new Date().toISOString()
-    };
-    await store.setJSON(KEY, state, { consistency: 'strong' });
-    return json(200, state);
+    }
+
+    await store.setJSON(KEY, state, { consistency: 'strong' })
+    return jsonResponse(state)
   }
 
-  return json(405, { error: 'Metodo non supportato.' });
-};
+  return jsonResponse({ error: 'Metodo non supportato.' }, 405)
+}
