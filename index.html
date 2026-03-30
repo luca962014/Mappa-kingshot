@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kingshot Shared Bear Trap Planner</title>
+<style>
+  :root { --text:#eef2ff; --muted:#b8c1d8; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color:var(--text); background:linear-gradient(180deg,#0b1020 0%,#111827 100%); }
+  .app { min-height:100vh; display:grid; grid-template-columns:340px 1fr; gap:16px; padding:16px; }
+  .panel { background:rgba(17,24,39,.94); border:1px solid rgba(255,255,255,.08); border-radius:18px; padding:16px; }
+  h1 { margin:0 0 10px; font-size:22px; }
+  h2 { margin:18px 0 8px; font-size:15px; }
+  p { margin:0 0 10px; line-height:1.45; color:#dde5f2; }
+  .muted { color:var(--muted); font-size:13px; }
+  .legend { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; margin-top:8px; }
+  .legend-item { display:flex; align-items:center; gap:8px; font-size:13px; }
+  .swatch { width:16px; height:16px; transform:rotate(45deg); border-radius:2px; border:1px solid rgba(0,0,0,.35); }
+  .controls { display:grid; gap:8px; margin-top:12px; }
+  button, textarea, select, input[type="text"], input[type="password"] { width:100%; border-radius:10px; border:1px solid rgba(255,255,255,.12); background:#0f172a; color:white; padding:10px 12px; font:inherit; }
+  button { cursor:pointer; }
+  button:hover { background:#16213a; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  textarea { min-height:120px; resize:vertical; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .map-wrap { background:rgba(31,41,55,.58); border:1px solid rgba(255,255,255,.08); border-radius:18px; padding:16px; overflow:auto; }
+  .board { position:relative; width:1110px; height:1110px; margin:0 auto; border-radius:18px; background:linear-gradient(180deg,#7c72d6 0%,#665bc8 100%); box-shadow:inset 0 0 0 1px rgba(255,255,255,.06); }
+  svg { position:absolute; inset:0; width:100%; height:100%; }
+  .labels { position:absolute; inset:0; pointer-events:none; }
+  .name-input { position:absolute; transform:translate(-50%,-50%); width:48px; padding:1px 3px; text-align:center; font-size:8px; font-weight:700; line-height:1.05; border-radius:5px; border:1px solid rgba(255,255,255,.14); background:rgba(15,23,42,.38); color:white; pointer-events:auto; }
+  .popup { position:absolute; display:none; z-index:10; transform:translate(-50%,-110%); background:rgba(15,23,42,.96); border:1px solid rgba(255,255,255,.14); border-radius:10px; padding:6px; gap:6px; min-width:132px; box-shadow:0 10px 25px rgba(0,0,0,.25); }
+  .popup.show { display:grid; }
+  .popup button { padding:7px 8px; font-size:12px; }
+  .status { margin-top:10px; font-size:12px; color:var(--muted); min-height:18px; }
+  .hint { margin-top:10px; font-size:12px; color:var(--muted); }
+  @media (max-width:980px) { .app { grid-template-columns:1fr; } .panel { order:2; } .map-wrap { order:1; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="panel">
+    <h1>Kingshot Planner Shared</h1>
+    <p>Mappa condivisa per il clan con Bear Trap centrale. Le modifiche vengono salvate online e sono visibili a tutti dopo il refresh automatico.</p>
+    <p class="muted">Se imposti una chiave editor su Netlify, inseriscila qui per modificare. Chi apre senza chiave potrà solo vedere la mappa.</p>
+
+    <h2>Accesso</h2>
+    <input id="editorKey" type="password" placeholder="Editor key opzionale" />
+
+    <h2>Nuova città</h2>
+    <div class="row">
+      <input id="nextName" type="text" maxlength="12" placeholder="Nome città" value="C01" />
+      <select id="nextColor">
+        <option value="cyan">Ciano</option>
+        <option value="green">Verde</option>
+        <option value="pink">Rosa</option>
+        <option value="orange">Arancio</option>
+        <option value="purple">Viola</option>
+      </select>
+    </div>
+
+    <h2>Legenda</h2>
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" style="background:#89d64e"></span>Linea 1</div>
+      <div class="legend-item"><span class="swatch" style="background:#5ad6d1"></span>Supporto</div>
+      <div class="legend-item"><span class="swatch" style="background:#ff92ca"></span>Rally A</div>
+      <div class="legend-item"><span class="swatch" style="background:#f6b24a"></span>Rally B</div>
+      <div class="legend-item"><span class="swatch" style="background:#a98bf6"></span>Riserve</div>
+    </div>
+
+    <div class="controls">
+      <button id="saveNow">Salva online</button>
+      <button id="cancelMove" disabled>Annulla spostamento</button>
+      <button id="clearAll">Svuota mappa</button>
+      <button id="reloadBtn">Ricarica dal server</button>
+      <button id="exportJson">Esporta JSON</button>
+      <textarea id="jsonBox" placeholder="Export JSON del layout condiviso"></textarea>
+    </div>
+
+    <div class="status" id="status"></div>
+    <div class="hint">Regole: città 2x2, Bear Trap 3x3, niente sovrapposizioni. Auto-refresh ogni 5 secondi.</div>
+  </aside>
+
+  <main class="map-wrap">
+    <div class="board" id="board">
+      <svg id="svg" viewBox="0 0 1110 1110" aria-label="Mappa Bear Trap"></svg>
+      <div class="labels" id="labels"></div>
+      <div class="popup" id="popup">
+        <button id="moveBtn">Sposta</button>
+        <button id="deleteBtn">Cancella</button>
+      </div>
+    </div>
+  </main>
+</div>
+<script>
+const UNIT = 30;
+const HALF = UNIT / 2;
+const OFF_X = 555;
+const OFF_Y = 105;
+const GRID_MIN = 0;
+const GRID_MAX = 30;
+const BT = { x: 14, y: 14, size: 3 };
+const palette = { cyan:'#5ad6d1', green:'#89d64e', pink:'#ff92ca', orange:'#f6b24a', purple:'#a98bf6' };
+const colorKeys = Object.keys(palette);
+const svg = document.getElementById('svg');
+const labels = document.getElementById('labels');
+const board = document.getElementById('board');
+const popup = document.getElementById('popup');
+const moveBtn = document.getElementById('moveBtn');
+const deleteBtn = document.getElementById('deleteBtn');
+const cancelMoveBtn = document.getElementById('cancelMove');
+const saveNowBtn = document.getElementById('saveNow');
+const reloadBtn = document.getElementById('reloadBtn');
+const clearAllBtn = document.getElementById('clearAll');
+const jsonBox = document.getElementById('jsonBox');
+const nextName = document.getElementById('nextName');
+const nextColor = document.getElementById('nextColor');
+const statusBox = document.getElementById('status');
+const editorKey = document.getElementById('editorKey');
+let selectedId = null;
+let moveMode = false;
+let state = { slots: [], updatedAt: null };
+let dirty = false;
+let isSaving = false;
+
+editorKey.value = localStorage.getItem('ks-editor-key') || '';
+editorKey.addEventListener('input', () => localStorage.setItem('ks-editor-key', editorKey.value));
+
+function project(gx, gy) { return { x: (gx - gy) * HALF + OFF_X, y: (gx + gy) * HALF + OFF_Y }; }
+function diamondPoints(cx, cy, span) { return `${cx},${cy - span} ${cx + span},${cy} ${cx},${cy + span} ${cx - span},${cy}`; }
+function cellPolygon(gx, gy, fill, stroke, strokeWidth=1) {
+  const p = project(gx, gy);
+  const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+  poly.setAttribute('points', diamondPoints(p.x, p.y, HALF));
+  poly.setAttribute('fill', fill);
+  poly.setAttribute('stroke', stroke);
+  poly.setAttribute('stroke-width', strokeWidth);
+  return poly;
+}
+function cityCells(slot) { return [[slot.x,slot.y],[slot.x+1,slot.y],[slot.x,slot.y+1],[slot.x+1,slot.y+1]]; }
+function overlapsBT(slot) { return cityCells(slot).some(([x,y]) => x >= BT.x && x < BT.x + BT.size && y >= BT.y && y < BT.y + BT.size); }
+function overlapsOther(slot, slots, ignoreId=null) {
+  const cells = new Set(cityCells(slot).map(c => c.join(',')));
+  return slots.some(other => other.id !== ignoreId && cityCells(other).some(c => cells.has(c.join(','))));
+}
+function canPlace(x, y, slots, ignoreId=null) {
+  if (x < GRID_MIN || y < GRID_MIN || x + 1 > GRID_MAX || y + 1 > GRID_MAX) return false;
+  if (x % 2 === 0 || y % 2 === 0) return false;
+  const slot = { x, y, id: ignoreId };
+  if (overlapsBT(slot)) return false;
+  if (overlapsOther(slot, slots, ignoreId)) return false;
+  return true;
+}
+function nextAutoName(slots) { return `C${String(slots.length + 1).padStart(2, '0')}`; }
+function getSelected() { return state.slots.find(s => s.id === selectedId) || null; }
+function setStatus(text='') { statusBox.textContent = text; }
+function hidePopup() { popup.classList.remove('show'); }
+function clearSelection() { selectedId = null; hidePopup(); }
+function markDirty() { dirty = true; }
+function canEdit() { return true; }
+
+async function apiLoad() {
+  const res = await fetch('/.netlify/functions/layout');
+  if (!res.ok) throw new Error('Errore lettura server');
+  return await res.json();
+}
+async function apiSave() {
+  if (isSaving) return;
+  isSaving = true;
+  try {
+    const res = await fetch('/.netlify/functions/layout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-editor-key': editorKey.value || '' },
+      body: JSON.stringify(state)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Errore salvataggio');
+    state = data;
+    dirty = false;
+    setStatus('Salvato online.');
+    redraw();
+  } catch (e) {
+    setStatus(e.message || 'Errore salvataggio');
+  } finally {
+    isSaving = false;
+  }
+}
+async function loadFromServer(silent=false) {
+  try {
+    const remote = await apiLoad();
+    if (!dirty || remote.updatedAt !== state.updatedAt) {
+      state = remote;
+      nextName.value = nextAutoName(state.slots);
+      if (!silent) setStatus('Mappa aggiornata dal server.');
+      redraw();
+    }
+  } catch (e) {
+    if (!silent) setStatus('Errore nel caricamento dal server.');
+  }
+}
+
+function showPopupFor(slot) {
+  const c = project(slot.x + 0.5, slot.y + 0.5);
+  popup.style.left = `${c.x}px`;
+  popup.style.top = `${c.y - 34}px`;
+  popup.classList.add('show');
+}
+function startMove() {
+  if (!selectedId) return;
+  moveMode = true;
+  cancelMoveBtn.disabled = false;
+  hidePopup();
+  const slot = getSelected();
+  if (slot) setStatus(`Spostamento attivo: scegli un punto guida per ${slot.name || 'città'}.`);
+}
+function cancelMove() {
+  moveMode = false;
+  cancelMoveBtn.disabled = true;
+  setStatus(state.updatedAt ? `Ultimo aggiornamento: ${new Date(state.updatedAt).toLocaleString('it-IT')}` : '');
+}
+function deleteSelected() {
+  if (!selectedId) return;
+  state.slots = state.slots.filter(s => s.id !== selectedId);
+  clearSelection();
+  cancelMove();
+  nextName.value = nextAutoName(state.slots);
+  markDirty();
+  redraw();
+}
+function handleAnchorClick(x, y) {
+  if (moveMode && selectedId) {
+    const current = getSelected();
+    if (!current) { cancelMove(); redraw(); return; }
+    if (!canPlace(x, y, state.slots, current.id)) { setStatus('Posizione non valida per lo spostamento.'); return; }
+    current.x = x; current.y = y; markDirty(); cancelMove(); clearSelection(); redraw(); return;
+  }
+  if (!canPlace(x, y, state.slots)) return;
+  state.slots.push({ id: Date.now() + Math.floor(Math.random() * 1000), x, y, name: (nextName.value || nextAutoName(state.slots)).trim().slice(0,12), color: nextColor.value || 'cyan' });
+  nextName.value = nextAutoName(state.slots);
+  clearSelection(); markDirty(); redraw();
+}
+
+function renderGrid() {
+  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  for (let y = GRID_MIN; y <= GRID_MAX; y++) for (let x = GRID_MIN; x <= GRID_MAX; x++) g.appendChild(cellPolygon(x, y, 'rgba(255,255,255,.05)', 'rgba(255,255,255,.14)', .8));
+  svg.appendChild(g);
+}
+function renderAnchors() {
+  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  for (let y = 1; y <= GRID_MAX - 1; y += 2) {
+    for (let x = 1; x <= GRID_MAX - 1; x += 2) {
+      const allowed = canPlace(x, y, state.slots, moveMode ? selectedId : null);
+      const c = project(x + 0.5, y + 0.5);
+      const hit = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      hit.setAttribute('cx', c.x); hit.setAttribute('cy', c.y); hit.setAttribute('r', allowed ? 6 : 4);
+      hit.setAttribute('fill', allowed ? 'rgba(255,255,255,.28)' : 'rgba(0,0,0,.12)');
+      hit.setAttribute('stroke', allowed ? 'rgba(255,255,255,.35)' : 'rgba(255,255,255,.08)');
+      hit.setAttribute('stroke-width', '1');
+      hit.style.cursor = allowed ? 'pointer' : 'default';
+      if (allowed) hit.addEventListener('click', () => handleAnchorClick(x, y));
+      g.appendChild(hit);
+    }
+  }
+  svg.appendChild(g);
+}
+function renderBearTrap() {
+  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  for (let yy = 0; yy < BT.size; yy++) for (let xx = 0; xx < BT.size; xx++) g.appendChild(cellPolygon(BT.x + xx, BT.y + yy, '#111827', 'rgba(255,255,255,.14)', 1.2));
+  const c = project(BT.x + 1, BT.y + 1);
+  const outline = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+  outline.setAttribute('points', diamondPoints(c.x, c.y, BT.size * HALF));
+  outline.setAttribute('fill', 'none'); outline.setAttribute('stroke', 'rgba(255,255,255,.25)'); outline.setAttribute('stroke-width', 2); g.appendChild(outline);
+  const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  text.setAttribute('x', c.x); text.setAttribute('y', c.y + 6); text.setAttribute('text-anchor', 'middle'); text.setAttribute('font-size', '18'); text.setAttribute('font-weight', '800'); text.setAttribute('fill', 'white'); text.textContent = 'BT'; g.appendChild(text);
+  svg.appendChild(g);
+}
+function renderCities() {
+  labels.innerHTML = '';
+  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  state.slots.forEach(slot => {
+    const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    group.style.cursor = 'pointer';
+    for (let yy = 0; yy < 2; yy++) for (let xx = 0; xx < 2; xx++) group.appendChild(cellPolygon(slot.x + xx, slot.y + yy, palette[slot.color] || palette.cyan, 'rgba(0,0,0,.30)', 1));
+    const c = project(slot.x + 0.5, slot.y + 0.5);
+    const outline = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    outline.setAttribute('points', diamondPoints(c.x, c.y, 2 * HALF));
+    outline.setAttribute('fill', 'none'); outline.setAttribute('stroke', slot.id === selectedId ? 'rgba(255,255,255,.95)' : 'rgba(0,0,0,.45)'); outline.setAttribute('stroke-width', slot.id === selectedId ? 3 : 2); group.appendChild(outline);
+    const coord = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    coord.setAttribute('x', c.x); coord.setAttribute('y', c.y + 14); coord.setAttribute('text-anchor', 'middle'); coord.setAttribute('font-size', '7'); coord.setAttribute('font-weight', '800'); coord.setAttribute('fill', 'rgba(17,24,39,.55)'); coord.textContent = `${slot.x},${slot.y}`; group.appendChild(coord);
+    group.addEventListener('click', (e) => { e.stopPropagation(); selectedId = slot.id; moveMode = false; cancelMoveBtn.disabled = true; setStatus(`Selezionata: ${slot.name || 'città'}.`); redraw(); });
+    g.appendChild(group);
+    const input = document.createElement('input');
+    input.className = 'name-input'; input.value = slot.name || ''; input.maxLength = 12; input.style.left = `${c.x}px`; input.style.top = `${c.y}px`;
+    input.addEventListener('click', e => e.stopPropagation());
+    input.addEventListener('input', (e) => { const target = state.slots.find(s => s.id === slot.id); if (!target) return; target.name = e.target.value; markDirty(); });
+    labels.appendChild(input);
+  });
+  svg.appendChild(g);
+  const selected = getSelected();
+  if (selected) showPopupFor(selected); else hidePopup();
+}
+function redraw() { svg.innerHTML = ''; labels.innerHTML = ''; renderGrid(); renderAnchors(); renderBearTrap(); renderCities(); }
+
+moveBtn.addEventListener('click', startMove);
+deleteBtn.addEventListener('click', deleteSelected);
+cancelMoveBtn.addEventListener('click', () => { clearSelection(); cancelMove(); redraw(); });
+clearAllBtn.addEventListener('click', () => { state.slots = []; clearSelection(); cancelMove(); nextName.value = 'C01'; markDirty(); redraw(); });
+reloadBtn.addEventListener('click', () => loadFromServer(false));
+saveNowBtn.addEventListener('click', apiSave);
+document.getElementById('exportJson').addEventListener('click', () => { jsonBox.value = JSON.stringify(state, null, 2); });
+board.addEventListener('click', (e) => { if (e.target === board || e.target === svg || e.target === labels) { clearSelection(); cancelMove(); redraw(); } });
+
+setInterval(() => { if (!dirty) loadFromServer(true); }, 5000);
+nextName.value = nextAutoName(state.slots);
+loadFromServer(false);
+redraw();
+</script>
+</body>
+</html>
